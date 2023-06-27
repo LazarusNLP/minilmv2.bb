@@ -23,18 +23,15 @@ from ast import literal_eval
 
 import pkg_resources
 import torch
-import transformers
 from transformers import (
     AutoConfig,
     AutoModel,
     AutoTokenizer,
     HfArgumentParser,
-    Trainer,
     TrainingArguments,
     set_seed,
 )
 
-from .data_utils import get_tokenized_datasets
 from .minilmv2 import MiniLM
 from .parsers import get_data_parser, get_model_parser, split_args_by_parser
 
@@ -132,67 +129,14 @@ def main():
         distiller.load_state_dict(distiller_state_dict)
         logger.info("Loaded checkpoint")
 
-    logger.info("Initializing Train Dataset")
-    train_dataset, val_dataset = get_tokenized_datasets(
-        data_args, tokenizer, {"padding": "do_not_pad"}
-    )
+        student_output_dir = checkpoint_dir + "/student"
+        os.makedirs(student_output_dir, exist_ok=True)
 
-    if _is_distributed():
-        print("Process is distributed")
-        # To avoid deadlocks on the tokenizer
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        torch.save(distiller.student.state_dict(), student_output_dir + "/pytorch_model.bin")
+        student_config.save_pretrained(student_output_dir)
+        tokenizer.save_pretrained(student_output_dir)
 
-    is_global_primary = _get_rank() == 0
-    if is_global_primary:
-        transformers.utils.logging.set_verbosity_info()
-        transformers.utils.logging.enable_default_handler()
-        transformers.utils.logging.enable_explicit_format()
-
-    # Set-up logging
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
-        datefmt="%m/%d/%Y %H:%M:%S",
-        level=logging.INFO if is_global_primary else logging.WARN,
-    )
-
-    logger.info(f"Data Arguments: {vars(data_args)}")
-    logger.info(f"Model Arguments: {vars(model_args)}")
-    logger.info(f"Training Arguments: {vars(hf_training_args)}")
-
-    logger.info("Initializing Trainer")
-
-    logger.info(
-        f"Process rank: {hf_training_args.local_rank}, device: {hf_training_args.device}, n_gpu: {hf_training_args.n_gpu}"
-        + f"distributed training: {bool(hf_training_args.local_rank != -1)}, 16-bits training: {hf_training_args.fp16}"
-        + f"16-bits optimization level {hf_training_args.fp16_opt_level}"
-    )
-
-    print(f"HF Training Args : {hf_training_args}")
-    print(f"os.getenv('RANK') = {os.getenv('RANK')}")
-    print(f"os.getenv('LOCAL_RANK') = {os.getenv('LOCAL_RANK')}")
-    print(f"os.getenv('WORLD_SIZE') = {os.getenv('WORLD_SIZE')}")
-    trainer = Trainer(
-        model=distiller,
-        args=hf_training_args,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset,
-        data_collator=transformers.DataCollatorWithPadding(
-            tokenizer, padding="longest"
-        ),
-    )
-
-    logger.info("Training Model")
-    train_result = trainer.train(resume_from_checkpoint=checkpoint_dir)
-    trainer.save_model()
-
-    metrics = train_result.metrics
-    trainer.log_metrics("train", metrics)
-    trainer.save_metrics("train", metrics)
-    trainer.save_state()
-
-    tokenizer.save_pretrained(hf_training_args.output_dir)
-
-    print("---- DONE -----")
+        print("---- DONE -----")
 
 
 if __name__ == "__main__":

@@ -17,28 +17,10 @@ Tools for streaming and working with large datasets.
 
 import logging
 import os
-from typing import List, Union
 
-from datasets import DownloadConfig, disable_caching, load_dataset
-from datasets.data_files import DataFilesDict, DataFilesList, Url
+from datasets import load_dataset
 
 logger = logging.getLogger(__name__)
-
-
-def get_data_files_dict(urls: str) -> Union[DataFilesDict, List[str]]:
-    """Returns a data files dict object with the given URLs.
-
-    Args:
-        urls: List of files to download
-
-    Returns:
-        data_files_dict: Dict conforming to the processed format in HF datasets so that no other preprocessing / validation is performed by the library.
-    """
-    disable_caching()
-    data_file_list = [Url(u) for u in urls]
-    data_files_dict = DataFilesDict()
-    data_files_dict["train"] = DataFilesList(data_file_list, origin_metadata=None)  # type: ignore
-    return data_files_dict
 
 
 def prepare_dataset(tokenizer, config, max_seq_len, tokenization_args):
@@ -54,19 +36,11 @@ def prepare_dataset(tokenizer, config, max_seq_len, tokenization_args):
         dataset: HuggingFace dataset object.
     """
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    download_config = DownloadConfig(max_retries=50)
-    data_format = config.get("format", "text")
-    data_files_dict = get_data_files_dict(config["urls"])
-    dataset = load_dataset(
-        data_format,
-        data_files=data_files_dict,
-        download_config=download_config,
-        streaming=True,
-    )["train"]
-    columns = config.get("columns", "text").split(",")
+    dataset = load_dataset(config["dataset_name"], split="train").shuffle(seed=41).select(range(51_200_000))
+    column = config.get("column", "text")
 
     def tokenize_fn(examples):
-        text = ["\n".join(e) for e in zip(*[examples[c] for c in columns])]
+        text = ["\n".join(e) for e in examples[column]]
         return tokenizer(
             text, truncation=True, max_length=max_seq_len, **tokenization_args
         )

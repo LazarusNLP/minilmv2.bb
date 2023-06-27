@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-CMD="python -m minilmv2.run_distillation -- "
+CMD="python -m minilmv2.export -- "
 # Set seed to ensure reproducibility. Set to -1 for no seed
 SEED=42
 
@@ -35,6 +35,7 @@ ARGS="data_params \
     --seed=${SEED}\
     model_params \
      --input_model_dir indobenchmark/indobert-base-p1 \
+     --checkpoint_dir ./exp \
       --student_hidden_size 384 \
       --student_num_layers 6 \
       --student_attention_heads 12 \
